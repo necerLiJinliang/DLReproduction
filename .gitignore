@@ -1,0 +1,9 @@
+*.pth
+*pycache*
+*.model
+*/log/*
+*.csv
+*.txt
+*.pyc 
+*csv*
+*dataset/Flickr/csv*
