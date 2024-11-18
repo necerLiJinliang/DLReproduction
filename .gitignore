@@ -7,3 +7,9 @@
 *.pyc 
 *csv*
 *dataset/Flickr/csv*
+*.pkl
+*nodes.json
+*indices.json
+*facebook*
+*ppi*
+
