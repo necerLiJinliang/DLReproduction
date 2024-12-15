@@ -6,6 +6,7 @@ from tqdm import tqdm
 import random
 from numba import njit
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 
 
 class MultiLayerWeightedGraph:
@@ -74,29 +75,39 @@ class MultiLayerWeightedGraph:
         self,
     ):
         # 构造每一层的图
+        all_k_order_sequence = self.all_k_order_sequence.copy()
         for i in tqdm(range(0, self.k + 1), desc="Building multilayer graph"):
             self.graph_layers[i].add_nodes_from(self.nodes)
             processed_edges = set()
-            for node1 in self.nodes:
-                for node2 in self.nodes:
-                    if (node1, node2) not in processed_edges:
-                        # seq1 = self.get_ordered_degree_sequence(
-                        #     self.get_k_hop_neighbors(self.base_graph, node1, i)
-                        # )
-                        # seq2 = self.get_ordered_degree_sequence(
-                        #     self.get_k_hop_neighbors(self.base_graph, node2, i)
-                        # )
-                        seq1 = self.all_k_order_sequence[i][self.node2index[node1]]
-                        seq2 = self.all_k_order_sequence[i][self.node2index[node2]]
-                        if seq1 and seq2:
-                            distance = self.compute_dtw_distance_opt1(seq1, seq2)
-                            if i > 0:
-                                distance += self.graph_layers[i - 1][node1][node2][
-                                    "weight"
-                                ]
-                            self.graph_layers[i].add_edge(node1, node2, weight=distance)
-                            processed_edges.add((node1, node2))
-                            processed_edges.add((node2, node1))
+            if i > 0:
+                pre_layer_graph = self.graph_layers[i - 1].copy()
+
+            def process_edge(node1, node2):
+                if (node1, node2) not in processed_edges:
+                    seq1 = all_k_order_sequence[i][self.node2index[node1]]
+                    seq2 = all_k_order_sequence[i][self.node2index[node2]]
+                    if seq1 and seq2:
+                        distance = self.compute_dtw_distance(seq1, seq2)
+                        if i > 0:
+                            distance += pre_layer_graph[node1][node2]["weight"]
+                        self.graph_layers[i].add_edge(node1, node2, weight=distance)
+                        processed_edges.add((node1, node2))
+                        processed_edges.add((node2, node1))
+                    return node1, node2, distance
+
+            weight_results = []
+            with ThreadPoolExecutor() as executor:
+                futures = []
+                for node1 in self.nodes:
+                    for node2 in self.nodes:
+                        if node1 != node2:
+                            futures.append(executor.submit(process_edge, node1, node2))
+                for future in futures:
+                    result = future.result()
+                    if result:
+                        weight_results.append(result)
+            for node1, node2, weight in weight_results:
+                self.graph_layers[i][node1][node2]["weight"] = weight
         for i in range(0, self.k + 1):
             for u, v, d in self.graph_layers[i].edges(data=True):
                 d["weight"] = np.exp(-d["weight"])

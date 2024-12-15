@@ -12,4 +12,5 @@
 *indices.json
 *facebook*
 *ppi*
-
+*.edgelist
+*.json

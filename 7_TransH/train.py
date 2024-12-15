@@ -1,0 +1,185 @@
+from model import TransH
+from dataset import TransHDataset
+import torch
+from torch.utils.data import DataLoader
+import argparse
+import os
+from tqdm import tqdm
+
+
+def train(args, model, dataset, device):
+    model.train()
+    data_loader = DataLoader(
+        dataset,
+        batch_size=args.batch_size,
+        collate_fn=TransHDataset.collate_fn,
+        num_workers=20,
+        shuffle=True,
+    )
+    epochs = args.epochs
+    optimizer = torch.optim.Adam(params=model.parameters(), lr=args.lr)
+    if args.load_path:
+        optimizer.load_state_dict(
+            torch.load(args.load_path, map_location=device)["optimizer_state_dict"],
+        )
+    scheduler = torch.optim.lr_scheduler.LinearLR(
+        optimizer,
+        start_factor=1.0,
+        end_factor=0.0001,
+        total_iters=epochs * len(data_loader),
+    )
+    for epoch in range(epochs):
+        total_loss = 0
+        for batch in tqdm(data_loader, desc="Training"):
+            inputs = {
+                "h": batch["h"].to(device),
+                "r": batch["r"].to(device),
+                "t": batch["t"].to(device),
+                "neg_samples": batch["neg_samples"].to(device),
+            }
+            optimizer.zero_grad()
+            loss = model(**inputs)
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item()
+            scheduler.step()
+        if epoch % 5 == 0:
+            # torch.save(model.state_dict(), args.save_path)
+            torch.save(
+                {
+                    "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                },
+                args.save_path,
+            )
+        print(f"Epoch:{epoch+1},loss:{total_loss / len(data_loader)}")
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Train TransH model")
+    parser.add_argument(
+        "--epochs",
+        type=int,
+        default=50,
+        help="Number of training epochs",
+    )
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=4800,
+        help="Batch size for training",
+    )
+    parser.add_argument(
+        "--lr",
+        type=float,
+        default=0.001,
+        help="Learning rate",
+    )
+    parser.add_argument(
+        "--embedding_dim",
+        type=int,
+        default=100,
+        help="Dimension of the embeddings",
+    )
+    parser.add_argument(
+        "--margin",
+        type=float,
+        default=0.25,
+        help="Margin for the loss function",
+    )
+    parser.add_argument(
+        "--c",
+        type=float,
+        default=0.0625,
+        help="Margin for the loss function",
+    )
+    parser.add_argument(
+        "--norm",
+        type=int,
+        default=1,
+        help="Margin for the loss function",
+    )
+    parser.add_argument(
+        "--filtered",
+        type=bool,
+        default=False,
+        help="Whether filter the corrupted data from all triples",
+    )
+    parser.add_argument(
+        "--advance",
+        type=bool,
+        default=False,
+        help="Whether filter the corrupted data from all triples",
+    )
+    parser.add_argument(
+        "--bern",
+        type=bool,
+        default=True,
+        help="Whether filter the corrupted data from all triples",
+    )
+    parser.add_argument(
+        "--data_folder",
+        type=str,
+        default="7_TransH2/dataset/FB15k",
+        help="Path to the dataset",
+    )
+    parser.add_argument(
+        "--save_path",
+        type=str,
+        default="7_TransH2/model_save/TransH-bern.pth",
+        help="Path to the dataset",
+    )
+    parser.add_argument(
+        "--load_path",
+        type=str,
+        # default="7_TransH2/model_save/model-unif_filter.pth",
+        default=None,
+        help="Path to the dataset",
+    )
+
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+    print(vars(args))
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(device)
+    train_data_path = os.path.join(args.data_folder, "train.txt")
+    entity2id_path = os.path.join(args.data_folder, "entity2id.json")
+    label2id_path = os.path.join(args.data_folder, "label2id.json")
+    all_triples_path = os.path.join(args.data_folder, "all_triples.pkl")
+    train_dataset = TransHDataset(
+        data_dir=train_data_path,
+        entity2id_file=entity2id_path,
+        relation2id_file=label2id_path,
+        triples_file=all_triples_path,
+        mode="train",
+        filtered=args.filtered,
+        bern=args.bern,
+        num_neg_samples=20,
+        advance=False,
+    )
+    num_entities = len(train_dataset.entity2id)
+    num_relations = len(train_dataset.relation2id)
+    model: TransH = TransH(
+        embedding_dim=args.embedding_dim,
+        margin=args.margin,
+        num_entities=num_entities,
+        num_relations=num_relations,
+        norm=args.norm,
+        c=args.c,
+    ).to(device)
+    try:
+        if args.load_path:
+            print(f"Load model from {args.load_path}")
+            model.load_state_dict(
+                torch.load(args.load_path, map_location=device)["model_state_dict"]
+            )
+        train(args=args, model=model, dataset=train_dataset, device=device)
+    finally:
+        print(1)
+
+
+if __name__ == "__main__":
+    main()

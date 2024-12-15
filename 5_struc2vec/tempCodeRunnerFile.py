@@ -1,0 +1,1 @@
+ scores = cross_val_score(classifier, X, y, cv=5, scoring='recall_macro')
