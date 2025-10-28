@@ -60,4 +60,5 @@
     [*Multi-Preference Lambda-weighted Listwise DPO for Dynamic Preference Alignment*](https://arxiv.org/abs/2506.19780)
 
 18. KTO
+    
     [*KTO:Model Alignment as Prospect Theoretic Optimization*](https://arxiv.org/abs/2402.01306)
