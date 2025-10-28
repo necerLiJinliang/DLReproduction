@@ -43,6 +43,6 @@ class LINEModel(nn.Module):
             sample_node_embeddings,
         )  # [b, s]
         pos_loss = -F.logsigmoid(logits[:, 0]).mean()  # [b]
-        neg_loss = -F.logsigmoid(logits[:, 1:]).mean()
+        neg_loss = -F.logsigmoid(-logits[:, 1:]).mean()
         loss = pos_loss + neg_loss
         return loss
